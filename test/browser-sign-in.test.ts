@@ -36,6 +36,28 @@ test("browser sign-in writes the session after the shop accepts the shopper", as
   }
 });
 
+test("browser sign-in does not open a foreign shop address", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "barbora-browser-"));
+  const sessionFile = path.join(dir, "session.json");
+  const launcher: BrowserLauncher = {
+    async open() {
+      throw new Error("launcher should not run");
+    },
+  };
+  try {
+    const result = await signInWithBrowser({
+      country: "LT",
+      sessionFile,
+      launcher,
+      origin: "https://barbora.lt@evil.example",
+    });
+    assert.deepEqual(result, { ok: false, reason: "cancelled" });
+    await assert.rejects(access(sessionFile));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("browser sign-in stores the shop cookies and drops the others", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "barbora-browser-"));
   const sessionFile = path.join(dir, "session.json");
