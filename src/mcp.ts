@@ -34,10 +34,11 @@ const inputSchemas: Record<ToolName, z.ZodType> = {
     timeslotId: z.string(),
   }),
   checkout_preview: z.object({}),
-  place_order: z.object({
+  place_order: z.strictObject({
     total: z.number(),
     address: z.string(),
     slot: z.string(),
+    lines: z.array(z.object({ id: z.string(), quantity: z.number() })),
   }),
 };
 

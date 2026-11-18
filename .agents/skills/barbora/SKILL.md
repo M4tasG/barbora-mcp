@@ -3,7 +3,7 @@ name: barbora
 description: >
   Shop on Barbora for a shopper. Use when signing in to barbora.lt, barbora.ee,
   or barbora.lv, searching the catalog, changing the cart, previewing checkout,
-  reserving a delivery slot, or placing an order after the shopper confirms one total, address, and slot.
+  reserving a delivery slot, or placing an order after the shopper confirms the cart lines, one total, one address, and one slot.
 ---
 
 # Shop on Barbora
@@ -55,15 +55,15 @@ Done when you have shown the shopper that preview.
 
 ## Confirm
 
-A confirm is the shopper's yes to one total, one address, and one slot on the latest checkout preview.
+A confirm is the shopper's yes to the cart lines, one total, one address, and one slot on the latest checkout preview.
 
-"Buy the usual" is not a confirm. Ask for the total, the address, and the slot.
+"Buy the usual" is not a confirm. Ask for each line id and quantity, the total, the address, and the slot.
 
-Done when the shopper has named those three, and they match the latest preview.
+Done when the shopper has named those, and they match the latest preview.
 
 ## Place the order
 
-Call `place_order` with that total, address, and slot.
+Call `place_order` with those lines, that total, that address, and that slot. The tool then opens a local prompt. The shopper accepts there. Do not pass a flag that skips the prompt.
 
 When the confirm does not match, call `checkout_preview` again and ask the shopper to confirm the new checkout.
 
