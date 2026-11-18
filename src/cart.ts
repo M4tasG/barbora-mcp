@@ -1,4 +1,4 @@
-import { loadSession, shopOrigin, shopTarget, type Session } from "./password-sign-in.ts";
+import { allowedShopUrl, loadSession, shopOrigin, shopTarget, type Session } from "./password-sign-in.ts";
 
 export type CartUnit = {
   min: number;
@@ -155,14 +155,15 @@ type OpenSession = { ok: true; session: Session; origin: string; cookie: string 
 async function openSession(sessionFile: string, origin: string | undefined): Promise<OpenSession | { ok: false; reason: "signed-out" }> {
   const session = await loadSession(sessionFile);
   if (!session) return { ok: false, reason: "signed-out" };
-  const shopUrl = origin ?? shopOrigin(session.country);
-  const hostname = new URL(shopUrl).hostname;
+  const shop = allowedShopUrl(origin ?? shopOrigin(session.country));
+  if (!shop) return { ok: false, reason: "signed-out" };
+  const hostname = shop.hostname.toLowerCase();
   const cookie = session.cookies
-    .filter((cookie) => hostname === cookie.domain || hostname.endsWith(`.${cookie.domain}`))
+    .filter((cookie) => cookie.domain.toLowerCase() === hostname)
     .map((cookie) => `${cookie.name}=${cookie.value}`)
     .join("; ");
   if (!cookie) return { ok: false, reason: "signed-out" };
-  return { ok: true, session, origin: shopUrl, cookie };
+  return { ok: true, session, origin: shop.origin, cookie };
 }
 
 async function shopRequest(opened: OpenSession, method: string, path: string, body?: unknown): Promise<Response> {
