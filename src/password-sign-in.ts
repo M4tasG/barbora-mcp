@@ -1,5 +1,7 @@
+import { execFile } from "node:child_process";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 
 export type Country = "LT" | "EE" | "LV";
 
@@ -85,10 +87,55 @@ export async function signInWithPassword(input: {
   return { ok: true, session };
 }
 
+const execFileAsync = promisify(execFile);
+
 export async function saveSession(sessionFile: string, session: Session): Promise<void> {
-  await mkdir(path.dirname(sessionFile), { recursive: true });
+  const directory = path.dirname(sessionFile);
+  const created = await mkdir(directory, { recursive: true, mode: 0o700 });
+  const directories = createdDirectories(created, directory);
+  for (const target of directories) await chmod(target, 0o700);
   await writeFile(sessionFile, JSON.stringify(session, null, 2), { mode: 0o600 });
   await chmod(sessionFile, 0o600);
+  if (process.platform !== "win32") return;
+  const sid = await currentUserSid();
+  for (const target of directories) await protectWindows(target, true, sid);
+  await protectWindows(sessionFile, false, sid);
+}
+
+function createdDirectories(created: string | undefined, directory: string): string[] {
+  if (typeof created !== "string") return [];
+  const first = created.startsWith("\\\\?\\") ? created.slice(4) : created;
+  const relative = path.relative(first, directory);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) return [first];
+  const targets = [first];
+  let current = first;
+  for (const part of relative.split(path.sep)) {
+    if (part === "") continue;
+    current = path.join(current, part);
+    targets.push(current);
+  }
+  return targets;
+}
+
+function windowsBinary(name: string): string {
+  const root = process.env.SystemRoot ?? "C:\\Windows";
+  return path.join(root, "System32", name);
+}
+
+async function currentUserSid(): Promise<string> {
+  const { stdout } = await execFileAsync(windowsBinary("whoami.exe"), ["/user", "/fo", "csv", "/nh"], {
+    windowsHide: true,
+  });
+  const sid = stdout.match(/"(S-\d+(?:-\d+)+)"/)?.[1];
+  if (!sid) throw new Error("The current user could not be read.");
+  return sid;
+}
+
+async function protectWindows(target: string, directory: boolean, sid: string): Promise<void> {
+  const rights = directory ? "(OI)(CI)M" : "M";
+  await execFileAsync(windowsBinary("icacls.exe"), [target, "/inheritance:r", "/grant:r", `*${sid}:${rights}`], {
+    windowsHide: true,
+  });
 }
 
 export async function loadSession(sessionFile: string): Promise<Session | null> {
