@@ -234,3 +234,51 @@ test("a quantity outside the shop unit is not sent", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("a foreign shop address does not receive the session", async () => {
+  let calls = 0;
+  const server = createServer((_req, res) => {
+    calls += 1;
+    res.writeHead(200);
+    res.end("{}");
+  });
+  const port = await listen(server);
+  const { dir, sessionFile } = await fixtureSession();
+  try {
+    const result = await readCart({ sessionFile, origin: "https://evil.example" });
+    assert.deepEqual(result, { ok: false, reason: "signed-out" });
+    assert.equal(calls, 0);
+    assert.equal(port > 0, true);
+  } finally {
+    server.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a parent-domain cookie is not sent to the shop", async () => {
+  let calls = 0;
+  const server = createServer((_req, res) => {
+    calls += 1;
+    res.writeHead(200);
+    res.end("{}");
+  });
+  const port = await listen(server);
+  const dir = await mkdtemp(path.join(tmpdir(), "barbora-cart-"));
+  const sessionFile = path.join(dir, "session.json");
+  await writeFile(
+    sessionFile,
+    JSON.stringify({
+      country: "LT",
+      createdAt: "2026-11-03T00:00:00.000Z",
+      cookies: [{ name: ".BRBAUTH", value: "shop-session", domain: "1", path: "/" }],
+    }),
+  );
+  try {
+    const result = await readCart({ sessionFile, origin: `http://127.0.0.1:${port}` });
+    assert.deepEqual(result, { ok: false, reason: "signed-out" });
+    assert.equal(calls, 0);
+  } finally {
+    server.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

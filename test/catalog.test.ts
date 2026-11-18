@@ -111,3 +111,21 @@ test("a product lookup returns the shop description and price", async () => {
     server.close();
   }
 });
+
+test("search does not call a foreign shop address", async () => {
+  let calls = 0;
+  const server = createServer((_req, res) => {
+    calls += 1;
+    res.writeHead(200);
+    res.end("{}");
+  });
+  const port = await listen(server);
+  try {
+    const result = await searchCatalog({ query: "pienas", country: "LT", origin: "https://evil.example" });
+    assert.deepEqual(result, { ok: false, reason: "rejected", status: 0 });
+    assert.equal(calls, 0);
+    assert.equal(port > 0, true);
+  } finally {
+    server.close();
+  }
+});

@@ -60,7 +60,7 @@ node --experimental-strip-types src/cli.ts checkout place --total 9.99 --address
 
 ## MCP
 
-An agent on this machine can call the same sign-in, search, cart, slot, checkout preview, and place-order actions. The password is a tool argument for that call and is not stored. Placing an order needs a confirm of the latest cart lines, total, address, and slot, then a local prompt the shopper accepts. A bank or card step is returned to the shopper.
+An agent on this machine can call the same sign-in, search, cart, slot, checkout preview, and place-order actions. Password sign-in opens a local prompt. The password is not a tool argument and is not stored. Placing an order needs a confirm of the latest cart lines, total, address, and slot, then a local prompt the shopper accepts. A bank or card step is returned to the shopper.
 
 ```json
 {

@@ -1,4 +1,4 @@
-import { shopOrigin, shopTarget, type Country } from "./password-sign-in.ts";
+import { allowedShopUrl, shopOrigin, shopTarget, type Country } from "./password-sign-in.ts";
 
 export type ProductUnit = {
   type: string;
@@ -35,8 +35,9 @@ export async function searchCatalog(input: {
   country: Country;
   origin?: string;
 }): Promise<CatalogResult> {
-  const origin = input.origin ?? shopOrigin(input.country);
-  const url = new URL("/proxy/api/v1/search/constructor/search", origin);
+  const shop = allowedShopUrl(input.origin ?? shopOrigin(input.country));
+  if (!shop) return { ok: false, reason: "rejected", status: 0 };
+  const url = new URL("/proxy/api/v1/search/constructor/search", shop);
   url.searchParams.set("searchText", input.query);
   url.searchParams.set("limit", String(SEARCH_LIMIT));
   const response = await shopGet(url, input.country);
@@ -51,8 +52,9 @@ export async function readProduct(input: {
   country: Country;
   origin?: string;
 }): Promise<ProductResult> {
-  const origin = input.origin ?? shopOrigin(input.country);
-  const url = new URL(`/proxy/api/v1/product/by-url/${encodeURIComponent(input.slug)}`, origin);
+  const shop = allowedShopUrl(input.origin ?? shopOrigin(input.country));
+  if (!shop) return { ok: false, reason: "rejected", status: 0 };
+  const url = new URL(`/proxy/api/v1/product/by-url/${encodeURIComponent(input.slug)}`, shop);
   const response = await shopGet(url, input.country);
   if (!response.ok) return { ok: false, reason: "rejected", status: response.status };
   const payload = (await response.json()) as ShopProduct & { description?: string };

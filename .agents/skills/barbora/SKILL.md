@@ -16,7 +16,7 @@ Call `session_status`.
 
 When the shopper is signed out, ask which sign-in to use.
 
-- `password_sign_in` sends the email and password on that call. The password exists only as the argument of that call.
+- `password_sign_in` asks the shopper for the password in a local prompt. Pass the email and the shop. Do not ask the shopper to paste the password, and do not pass it as an argument.
 - `browser_sign_in` opens the shop login page. Google, Facebook, and Apple work there.
 
 Done when `session_status` names the shop.

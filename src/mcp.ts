@@ -14,9 +14,8 @@ const unitBounds = {
 };
 
 const inputSchemas: Record<ToolName, z.ZodType> = {
-  password_sign_in: z.object({
+  password_sign_in: z.strictObject({
     email: z.string(),
-    password: z.string(),
     country,
   }),
   browser_sign_in: z.object({ country }),

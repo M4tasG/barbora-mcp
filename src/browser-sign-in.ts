@@ -1,4 +1,4 @@
-import { saveSession, shopOrigin, shopTarget, type Country, type Session, type SessionCookie } from "./password-sign-in.ts";
+import { allowedShopUrl, saveSession, shopOrigin, shopTarget, type Country, type Session, type SessionCookie } from "./password-sign-in.ts";
 
 export type BrowserOpen = {
   loginUrl: string;
@@ -12,22 +12,35 @@ export type BrowserLauncher = {
   open(input: BrowserOpen): Promise<{ ok: true; cookies: SessionCookie[] } | { ok: false; reason: BrowserSignInStop }>;
 };
 
+export function cookiesForShop(cookies: SessionCookie[], host: string): SessionCookie[] {
+  const shop = host.toLowerCase();
+  const kept: SessionCookie[] = [];
+  for (const cookie of cookies) {
+    const domain = cookie.domain.replace(/^\./, "").toLowerCase();
+    if (domain === shop) kept.push({ ...cookie, domain });
+  }
+  return kept;
+}
+
 export async function signInWithBrowser(input: {
   country: Country;
   sessionFile: string;
   launcher: BrowserLauncher;
   origin?: string;
 }): Promise<{ ok: true; session: Session } | { ok: false; reason: BrowserSignInStop }> {
-  const origin = input.origin ?? shopOrigin(input.country);
+  const shop = allowedShopUrl(input.origin ?? shopOrigin(input.country));
+  if (!shop) return { ok: false, reason: "cancelled" };
   const opened = await input.launcher.open({
-    loginUrl: new URL("/login", origin).toString(),
-    cartUrl: new URL("/proxy/api/v1/cart", origin).toString(),
+    loginUrl: new URL("/login", shop).toString(),
+    cartUrl: new URL("/proxy/api/v1/cart", shop).toString(),
     target: shopTarget(input.country),
   });
   if (!opened.ok) return { ok: false, reason: opened.reason };
+  const cookies = cookiesForShop(opened.cookies, shop.hostname);
+  if (cookies.length === 0) return { ok: false, reason: "cancelled" };
   const session: Session = {
     country: input.country,
-    cookies: opened.cookies,
+    cookies,
     createdAt: new Date().toISOString(),
   };
   await saveSession(input.sessionFile, session);
