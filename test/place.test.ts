@@ -9,6 +9,8 @@ import { callTool } from "../src/tools.ts";
 
 const ADDRESS = "Gedimino pr. 1-5, Vilnius";
 const SLOT = "Tue 10:00-12:00";
+const LINES = [{ id: "000000000001335200", quantity: 1 }];
+const accept = async () => true;
 
 async function listen(server: Server): Promise<number> {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -52,7 +54,10 @@ test("a confirm that does not match the checkout does not place the order", asyn
     const result = await placeOrder({
       sessionFile,
       origin: `http://127.0.0.1:${port}`,
-      confirm: { total: 1, address: ADDRESS, slot: SLOT },
+      confirm: { total: 1, address: ADDRESS, slot: SLOT, lines: LINES },
+      accept: async () => {
+        throw new Error("prompt should not run");
+      },
     });
     assert.deepEqual(result, { ok: false, reason: "mismatch" });
     assert.deepEqual(seen.sort(), [
@@ -79,7 +84,8 @@ test("a missing slot does not place the order", async () => {
     const result = await placeOrder({
       sessionFile,
       origin: `http://127.0.0.1:${port}`,
-      confirm: { total: 9.99, address: ADDRESS, slot: SLOT },
+      confirm: { total: 9.99, address: ADDRESS, slot: SLOT, lines: LINES },
+      accept,
     });
     assert.deepEqual(result, { ok: false, reason: "incomplete" });
     assert.equal(seen.some((call) => call.includes("submit") || call.includes("payments")), false);
@@ -111,7 +117,8 @@ test("a matching confirm returns the payment step and does not follow it", async
     const result = await placeOrder({
       sessionFile,
       origin: `http://127.0.0.1:${port}`,
-      confirm: { total: 9.99, address: ADDRESS, slot: SLOT },
+      confirm: { total: 9.99, address: ADDRESS, slot: SLOT, lines: LINES },
+      accept,
     });
     assert.deepEqual(result, { ok: false, reason: "payment", url: paymentUrl });
     assert.deepEqual(bodies, ["{}"]);
@@ -143,7 +150,8 @@ test("a matching confirm reports the order id and does not call the order paid",
     const result = await placeOrder({
       sessionFile,
       origin: `http://127.0.0.1:${port}`,
-      confirm: { total: 9.99, address: ADDRESS, slot: SLOT },
+      confirm: { total: 9.99, address: ADDRESS, slot: SLOT, lines: LINES },
+      accept,
     });
     assert.deepEqual(result, { ok: true, orderId: "B-100" });
     const text = formatPlace(result);
@@ -174,7 +182,8 @@ test("a bank redirect is returned to the shopper and is not followed", async () 
     const result = await placeOrder({
       sessionFile,
       origin: `http://127.0.0.1:${port}`,
-      confirm: { total: 9.99, address: ADDRESS, slot: SLOT },
+      confirm: { total: 9.99, address: ADDRESS, slot: SLOT, lines: LINES },
+      accept,
     });
     assert.deepEqual(result, {
       ok: false,
@@ -207,8 +216,8 @@ test("the place order tool returns the payment step and does not call the order 
   try {
     const result = await callTool(
       "place_order",
-      { total: 9.99, address: ADDRESS, slot: SLOT },
-      { sessionFile, origin: `http://127.0.0.1:${port}` },
+      { total: 9.99, address: ADDRESS, slot: SLOT, lines: LINES },
+      { sessionFile, origin: `http://127.0.0.1:${port}`, confirmPlace: accept },
     );
     assert.equal(result.isError, true);
     assert.equal(result.text, `The shopper still has to finish this payment step.\n${paymentUrl}`);
@@ -233,10 +242,101 @@ test("an open age check does not place the order", async () => {
     const result = await placeOrder({
       sessionFile,
       origin: `http://127.0.0.1:${port}`,
-      confirm: { total: 9.99, address: ADDRESS, slot: SLOT },
+      confirm: { total: 9.99, address: ADDRESS, slot: SLOT, lines: LINES },
+      accept,
     });
     assert.deepEqual(result, { ok: false, reason: "incomplete" });
     assert.equal(seen.some((call) => call.includes("submit") || call.includes("payments")), false);
+  } finally {
+    server.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("the same total with different lines does not place the order", async () => {
+  const seen: string[] = [];
+  const server = createServer(async (req, res) => {
+    seen.push(`${req.method} ${req.url}`);
+    await readBody(req);
+    writeCheckout(req, res);
+  });
+  const port = await listen(server);
+  const { dir, sessionFile } = await fixtureSession();
+  try {
+    const result = await placeOrder({
+      sessionFile,
+      origin: `http://127.0.0.1:${port}`,
+      confirm: { total: 9.99, address: ADDRESS, slot: SLOT, lines: [{ id: "000000000001335200", quantity: 2 }] },
+      accept: async () => {
+        throw new Error("prompt should not run");
+      },
+    });
+    assert.deepEqual(result, { ok: false, reason: "mismatch" });
+    assert.equal(seen.some((call) => call.includes("submit")), false);
+  } finally {
+    server.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a cancelled prompt does not place the order", async () => {
+  const seen: string[] = [];
+  const server = createServer(async (req, res) => {
+    seen.push(`${req.method} ${req.url}`);
+    await readBody(req);
+    writeCheckout(req, res);
+  });
+  const port = await listen(server);
+  const { dir, sessionFile } = await fixtureSession();
+  try {
+    const result = await placeOrder({
+      sessionFile,
+      origin: `http://127.0.0.1:${port}`,
+      confirm: { total: 9.99, address: ADDRESS, slot: SLOT, lines: LINES },
+      accept: async (message) => {
+        assert.equal(message.includes("000000000001335200"), true);
+        assert.equal(message.includes("9.99"), true);
+        assert.equal(message.includes(ADDRESS), true);
+        assert.equal(message.includes(SLOT), true);
+        return false;
+      },
+    });
+    assert.deepEqual(result, { ok: false, reason: "cancelled" });
+    assert.equal(formatPlace(result), "The shopper did not confirm. The order was not placed.");
+    assert.equal(seen.some((call) => call.includes("submit")), false);
+  } finally {
+    server.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a tool argument cannot skip the place prompt", async () => {
+  const seen: string[] = [];
+  let prompted = false;
+  const server = createServer(async (req, res) => {
+    seen.push(`${req.method} ${req.url}`);
+    await readBody(req);
+    writeCheckout(req, res);
+  });
+  const port = await listen(server);
+  const { dir, sessionFile } = await fixtureSession();
+  try {
+    const result = await callTool(
+      "place_order",
+      { total: 9.99, address: ADDRESS, slot: SLOT, lines: LINES, accepted: true },
+      {
+        sessionFile,
+        origin: `http://127.0.0.1:${port}`,
+        confirmPlace: async () => {
+          prompted = true;
+          return false;
+        },
+      },
+    );
+    assert.equal(prompted, true);
+    assert.equal(result.isError, true);
+    assert.equal(result.text, "The shopper did not confirm. The order was not placed.");
+    assert.equal(seen.some((call) => call.includes("submit")), false);
   } finally {
     server.close();
     await rm(dir, { recursive: true, force: true });

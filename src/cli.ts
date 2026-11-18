@@ -6,6 +6,7 @@ import { addToCart, changeQuantity, readCart, removeLine, type CartResult, type 
 import { readProduct, searchCatalog } from "./catalog.ts";
 import { formatPreview, previewCheckout } from "./checkout.ts";
 import { bookSlot, formatBook, formatSlots, listSlots } from "./slots.ts";
+import { promptToPlace } from "./confirm-prompt.ts";
 import { formatPlace, placeOrder } from "./place.ts";
 import { chromeLauncher } from "./chrome-launcher.ts";
 import { signInWithPassword, type Country } from "./password-sign-in.ts";
@@ -34,7 +35,7 @@ function usage(): void {
   stdout.write("       checkout\n");
   stdout.write("       checkout slots\n");
   stdout.write("       checkout slot --day <day> --id <id>\n");
-  stdout.write("       checkout place --total <n> --address <address> --slot <slot>\n");
+  stdout.write("       checkout place --total <n> --address <address> --slot <slot> --line <id>:<quantity>\n");
 }
 
 function readCountry(): Country | undefined {
@@ -237,6 +238,27 @@ async function cartCommand(): Promise<number> {
   return printCart(await changeQuantity({ sessionFile: file, origin, productId, quantity, unit }));
 }
 
+function linesFromArgs(): { id: string; quantity: number }[] | undefined {
+  const values: string[] = [];
+  for (let index = 0; index < process.argv.length; index += 1) {
+    if (process.argv[index] !== "--line") continue;
+    const value = process.argv[index + 1];
+    if (!value || value.startsWith("--")) return undefined;
+    values.push(value);
+  }
+  if (values.length === 0) return undefined;
+  const lines: { id: string; quantity: number }[] = [];
+  for (const value of values) {
+    const splitAt = value.lastIndexOf(":");
+    if (splitAt <= 0) return undefined;
+    const id = value.slice(0, splitAt);
+    const quantity = Number(value.slice(splitAt + 1));
+    if (!id || !Number.isFinite(quantity)) return undefined;
+    lines.push({ id, quantity });
+  }
+  return lines;
+}
+
 function readUnit(): CartUnit | undefined | "incomplete" {
   const min = argument("--min");
   const max = argument("--max");
@@ -304,15 +326,17 @@ async function placeCommand(): Promise<number> {
   const totalText = argument("--total");
   const address = argument("--address");
   const slot = argument("--slot");
+  const lines = linesFromArgs();
   const total = totalText === undefined ? Number.NaN : Number(totalText);
-  if (!address || !slot || !Number.isFinite(total)) {
+  if (!address || !slot || !Number.isFinite(total) || !lines) {
     usage();
     return 1;
   }
   const result = await placeOrder({
     sessionFile: argument("--session-file") ?? sessionFile(),
     origin: argument("--origin"),
-    confirm: { total, address, slot },
+    confirm: { total, address, slot, lines },
+    accept: promptToPlace,
   });
   stdout.write(`${formatPlace(result)}\n`);
   return result.ok ? 0 : 1;

@@ -1,5 +1,6 @@
 import { signInWithBrowser, type BrowserLauncher } from "./browser-sign-in.ts";
 import { formatPreview, previewCheckout } from "./checkout.ts";
+import { promptToPlace } from "./confirm-prompt.ts";
 import { formatPlace, placeOrder } from "./place.ts";
 import { bookSlot, formatBook, formatSlots, listSlots } from "./slots.ts";
 import { readProduct, searchCatalog } from "./catalog.ts";
@@ -12,6 +13,7 @@ export type ToolContext = {
   sessionFile: string;
   origin?: string;
   launcher?: BrowserLauncher;
+  confirmPlace?: (message: string) => Promise<boolean>;
   promptPassword?: () => Promise<string | null>;
 };
 
@@ -36,7 +38,7 @@ export const toolDescriptions = {
   reserve_slot: "Reserve one slot for the shopper. Pass the day id and the hour id from list_slots. This does not place an order.",
   checkout_preview: "Show the cart lines, address, slot, and the shop total. This does not place an order.",
   place_order:
-    "Place the order when the confirm matches the latest checkout total, address, and slot. A bank or card step is returned to the shopper.",
+    "Place the order when the confirm matches the latest checkout lines, total, address, and slot. A local prompt asks the shopper to accept. A bank or card step is returned to the shopper.",
 } as const;
 
 export type ToolName = keyof typeof toolDescriptions;
@@ -153,11 +155,15 @@ async function place(args: Record<string, unknown>, context: ToolContext): Promi
   const total = numberOf(args.total);
   const address = stringOf(args.address);
   const slot = stringOf(args.slot);
-  if (total === undefined || !address || !slot) return fail("A confirm needs a total, an address, and a slot.");
+  const lines = linesOf(args.lines);
+  if (total === undefined || !address || !slot || !lines) {
+    return fail("A confirm needs the cart lines, a total, an address, and a slot.");
+  }
   const result = await placeOrder({
     sessionFile: context.sessionFile,
     origin: context.origin,
-    confirm: { total, address, slot },
+    confirm: { total, address, slot, lines },
+    accept: context.confirmPlace ?? promptToPlace,
   });
   const text = formatPlace(result);
   return result.ok ? ok(text) : fail(text);
@@ -257,6 +263,19 @@ function stringOf(value: unknown): string | undefined {
 function numberOf(value: unknown): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
   return value;
+}
+
+function linesOf(value: unknown): { id: string; quantity: number }[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const lines: { id: string; quantity: number }[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") return undefined;
+    const id = stringOf((entry as { id?: unknown }).id);
+    const quantity = numberOf((entry as { quantity?: unknown }).quantity);
+    if (!id || quantity === undefined) return undefined;
+    lines.push({ id, quantity });
+  }
+  return lines;
 }
 
 function unitOf(args: Record<string, unknown>): CartUnit | undefined | "incomplete" {

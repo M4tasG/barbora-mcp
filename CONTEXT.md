@@ -45,5 +45,5 @@ The step where the shopper reviews address, slot, and total, then pays.
 _Avoid_: Submit, purchase
 
 **Confirm**:
-The shopper's explicit yes to one stated total, address, and slot. A vague "buy the usual" is not a confirm.
+The shopper's explicit yes to the cart lines, one stated total, one address, and one slot. A vague "buy the usual" is not a confirm.
 _Avoid_: Approval, consent flag
