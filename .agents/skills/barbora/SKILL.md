@@ -69,6 +69,8 @@ When the confirm does not match, call `checkout_preview` again and ask the shopp
 
 When the tool returns a payment URL, give that URL to the shopper and stop. The shopper finishes the bank or card step.
 
+When the tool says the payment step was withheld, tell the shopper to finish payment on the shop site and stop. Do not call `place_order` again.
+
 When the tool says the shop accepted the order, tell the shopper and include the order id.
 
-Done when the shopper has the payment URL, or you have reported the order id.
+Done when the shopper has the payment URL, you have reported the order id, or you have told the shopper to finish payment on the shop site.
