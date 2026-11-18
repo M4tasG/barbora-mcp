@@ -5,12 +5,14 @@ import { bookSlot, formatBook, formatSlots, listSlots } from "./slots.ts";
 import { readProduct, searchCatalog } from "./catalog.ts";
 import { addToCart, changeQuantity, clearCart, readCart, removeLine, type Cart, type CartResult, type CartUnit } from "./cart.ts";
 import { chromeLauncher } from "./chrome-launcher.ts";
+import { promptForPassword } from "./password-prompt.ts";
 import { loadSession, signInWithPassword, type Country } from "./password-sign-in.ts";
 
 export type ToolContext = {
   sessionFile: string;
   origin?: string;
   launcher?: BrowserLauncher;
+  promptPassword?: () => Promise<string | null>;
 };
 
 export type ToolResult = {
@@ -19,7 +21,8 @@ export type ToolResult = {
 };
 
 export const toolDescriptions = {
-  password_sign_in: "Sign in with email and password. The password is sent to the shop for this call and is not stored.",
+  password_sign_in:
+    "Sign in with an email. A local prompt asks the shopper for the password. Do not pass the password. It is not stored.",
   browser_sign_in: "Open the shop login page in Chrome. Google, Facebook, and Apple work there.",
   session_status: "Say whether a shopper is signed in, and to which shop.",
   search: "Search the catalog. Titles that start with UAT are left out.",
@@ -76,11 +79,14 @@ export async function callTool(name: string, args: Record<string, unknown>, cont
 }
 
 async function passwordSignIn(args: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {
+  if ("password" in args) return fail("Do not pass the password. A local prompt will ask the shopper.");
   const country = countryOf(args.country);
   const email = stringOf(args.email);
-  const password = stringOf(args.password);
   if (!country) return fail("Country must be LT, EE, or LV.");
-  if (!email || password === undefined) return fail("Email and password are required.");
+  if (!email) return fail("Email is required.");
+  const password = await (context.promptPassword ?? promptForPassword)();
+  if (password === null) return fail("Sign-in was cancelled before the password was entered.");
+  if (password.length === 0) return fail("A password is required.");
   const result = await signInWithPassword({
     email,
     password,

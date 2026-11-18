@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { access, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 import { allowedShopUrl, loadSession, signInWithPassword } from "../src/password-sign-in.ts";
+
+const execFileAsync = promisify(execFile);
 
 const PASSWORD = "s3cret-password";
 
@@ -35,7 +39,8 @@ test("password sign-in saves the shop session and leaves the password out", asyn
   });
   const port = await listen(server);
   const dir = await mkdtemp(path.join(tmpdir(), "barbora-session-"));
-  const sessionFile = path.join(dir, "session.json");
+  const sessionDirectory = path.join(dir, "jar");
+  const sessionFile = path.join(sessionDirectory, "session.json");
   try {
     const result = await signInWithPassword({
       email: "shopper@example.com",
@@ -54,8 +59,13 @@ test("password sign-in saves the shop session and leaves the password out", asyn
     assert.equal(result.ok, true);
     const raw = await readFile(sessionFile, "utf8");
     assert.equal(raw.includes(PASSWORD), false);
-    const mode = (await stat(sessionFile)).mode & 0o777;
-    assert.equal(mode, 0o600);
+    if (process.platform === "win32") {
+      await assertCurrentUserOnly(sessionFile);
+      await assertCurrentUserOnly(sessionDirectory);
+    } else {
+      assert.equal((await stat(sessionFile)).mode & 0o777, 0o600);
+      assert.equal((await stat(sessionDirectory)).mode & 0o777, 0o700);
+    }
     const session = await loadSession(sessionFile);
     assert.equal(session?.country, "LT");
     assert.deepEqual(session?.cookies, [
@@ -146,3 +156,26 @@ test("a cookie for another domain is not stored", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+function windowsBinary(name: string): string {
+  const root = process.env.SystemRoot ?? "C:\\Windows";
+  return path.join(root, "System32", name);
+}
+
+async function assertCurrentUserOnly(target: string): Promise<void> {
+  const { stdout: who } = await execFileAsync(windowsBinary("whoami.exe"), ["/user", "/fo", "csv", "/nh"], {
+    windowsHide: true,
+  });
+  const sid = who.match(/"(S-\d+(?:-\d+)+)"/)?.[1];
+  if (!sid) throw new Error("The current user could not be read.");
+  const { stdout } = await execFileAsync(
+    windowsBinary("WindowsPowerShell\\v1.0\\powershell.exe"),
+    ["-NoProfile", "-NonInteractive", "-Command", "(Get-Acl -LiteralPath $env:BARBORA_ACL).Sddl"],
+    { windowsHide: true, env: { ...process.env, BARBORA_ACL: target } },
+  );
+  const sddl = stdout.trim();
+  assert.equal(sddl.includes("D:P"), true);
+  const dacl = sddl.slice(sddl.indexOf("D:")).replace(/^D:[A-Z]*/, "");
+  const accounts = [...dacl.matchAll(/\((?:[^;]*;){5}([^)]*)\)/g)].map((match) => match[1]);
+  assert.deepEqual(accounts, [sid]);
+}
