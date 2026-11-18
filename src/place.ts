@@ -20,7 +20,8 @@ export type PlaceResult =
   | { ok: false; reason: "incomplete" }
   | { ok: false; reason: "mismatch" }
   | { ok: false; reason: "cancelled" }
-  | { ok: false; reason: "payment"; url: string };
+  | { ok: false; reason: "payment"; url: string }
+  | { ok: false; reason: "payment-rejected" };
 
 export async function placeOrder(input: {
   sessionFile: string;
@@ -53,8 +54,9 @@ export async function placeOrder(input: {
     body: {},
   });
   if (!sent.ok) return sent;
-  const url = paymentUrl(sent.body, sent.location);
-  if (url) return { ok: false, reason: "payment", url };
+  const step = paymentStep(sent.body, sent.location);
+  if (step === "rejected") return { ok: false, reason: "payment-rejected" };
+  if (typeof step === "object") return { ok: false, reason: "payment", url: step.url };
   return { ok: true, orderId: orderIdOf(sent.body) };
 }
 
@@ -67,6 +69,9 @@ export function formatPlace(result: PlaceResult): string {
   if (result.reason === "mismatch") return "That confirm does not match the latest checkout. The order was not placed.";
   if (result.reason === "cancelled") return "The shopper did not confirm. The order was not placed.";
   if (result.reason === "payment") return `The shopper still has to finish this payment step.\n${result.url}`;
+  if (result.reason === "payment-rejected") {
+    return "The shop accepted the submit. The payment step was withheld. Finish payment on the shop site.";
+  }
   return `Barbora rejected the order (${result.status}).`;
 }
 
@@ -89,7 +94,12 @@ function sameLines(confirm: ConfirmLine[], checkout: CheckoutPreview["lines"]): 
   return checkout.every((line) => wanted.get(line.id) === line.quantity);
 }
 
-function paymentUrl(body: unknown, location: string | null): string | undefined {
+const SHOP_HOSTS = new Set(["barbora.lt", "barbora.ee", "barbora.lv"]);
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+// Payment hosts stay empty until one is confirmed from the shop.
+const PAYMENT_HOSTS = new Set<string>();
+
+function paymentStep(body: unknown, location: string | null): "none" | "rejected" | { url: string } {
   const payment = field(body, "payment");
   const candidates = [
     location,
@@ -98,7 +108,27 @@ function paymentUrl(body: unknown, location: string | null): string | undefined 
     field(payment, "url"),
     field(payment, "redirectUrl"),
   ];
-  return candidates.find((value): value is string => typeof value === "string" && value.startsWith("http"));
+  let url: string | undefined;
+  for (const value of candidates) {
+    if (typeof value !== "string" || value.trim() === "") continue;
+    if (!allowedPaymentUrl(value)) return "rejected";
+    url ??= value;
+  }
+  return url === undefined ? "none" : { url };
+}
+
+function allowedPaymentUrl(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.username !== "" || url.password !== "") return false;
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (LOOPBACK_HOSTS.has(host)) return url.protocol === "http:" || url.protocol === "https:";
+  if (SHOP_HOSTS.has(host) || PAYMENT_HOSTS.has(host)) return url.protocol === "https:";
+  return false;
 }
 
 function orderIdOf(body: unknown): string | null {

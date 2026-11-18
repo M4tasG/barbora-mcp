@@ -219,10 +219,91 @@ test("the place order tool returns the payment step and does not call the order 
       { total: 9.99, address: ADDRESS, slot: SLOT, lines: LINES },
       { sessionFile, origin: `http://127.0.0.1:${port}`, confirmPlace: accept },
     );
-    assert.equal(result.isError, true);
+    assert.equal(result.isError, false);
     assert.equal(result.text, `The shopper still has to finish this payment step.\n${paymentUrl}`);
     assert.equal(result.text.toLowerCase().includes("paid"), false);
     assert.equal(seen.some((call) => call.includes("neopay")), false);
+  } finally {
+    server.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+const WITHHELD = "The shop accepted the submit. The payment step was withheld. Finish payment on the shop site.";
+
+test("a payment address is returned only for the shop or loopback", async () => {
+  const seen: string[] = [];
+  let payload = "{}";
+  const server = createServer(async (req, res) => {
+    await readBody(req);
+    seen.push(`${req.method} ${req.url}`);
+    if (req.method === "POST" && req.url === "/proxy/api/v1/cart/submit") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(payload);
+      return;
+    }
+    writeCheckout(req, res);
+  });
+  const port = await listen(server);
+  const { dir, sessionFile } = await fixtureSession();
+  const confirm = { total: 9.99, address: ADDRESS, slot: SLOT, lines: LINES };
+  const handed = (url: string) => ({ ok: false as const, reason: "payment" as const, url });
+  const cases: { body: unknown; result: Awaited<ReturnType<typeof placeOrder>>; hidden?: string }[] = [
+    { body: { url: "https://barbora.lt/pay" }, result: handed("https://barbora.lt/pay") },
+    { body: { url: "https://barbora.ee/pay" }, result: handed("https://barbora.ee/pay") },
+    { body: { url: "https://barbora.lv/pay" }, result: handed("https://barbora.lv/pay") },
+    { body: { url: "https://BARBORA.lt/pay" }, result: handed("https://BARBORA.lt/pay") },
+    { body: { redirectUrl: "http://localhost/pay" }, result: handed("http://localhost/pay") },
+    { body: { url: "http://[::1]/pay" }, result: handed("http://[::1]/pay") },
+    { body: { url: "", orderId: "B-100" }, result: { ok: true, orderId: "B-100" } },
+    { body: { url: "https://evil.example" }, result: { ok: false, reason: "payment-rejected" }, hidden: "evil.example" },
+    { body: { url: "httpnot-a-url" }, result: { ok: false, reason: "payment-rejected" }, hidden: "httpnot-a-url" },
+    {
+      body: { url: "https://user:secret@barbora.lt/pay" },
+      result: { ok: false, reason: "payment-rejected" },
+      hidden: "secret",
+    },
+    { body: { url: "http://barbora.lt/pay" }, result: { ok: false, reason: "payment-rejected" }, hidden: "http://barbora.lt/pay" },
+    {
+      body: { url: "https://barbora.lt.evil.example/pay" },
+      result: { ok: false, reason: "payment-rejected" },
+      hidden: "barbora.lt.evil.example",
+    },
+    {
+      body: { url: "https://evil.example/pay", redirectUrl: `http://127.0.0.1:${port}/payments/ok` },
+      result: { ok: false, reason: "payment-rejected" },
+      hidden: "evil.example",
+    },
+  ];
+  try {
+    for (const entry of cases) {
+      payload = JSON.stringify(entry.body);
+      const result = await placeOrder({
+        sessionFile,
+        origin: `http://127.0.0.1:${port}`,
+        confirm,
+        accept,
+      });
+      assert.deepEqual(result, entry.result);
+      const text = formatPlace(result);
+      if (entry.result.ok === false && entry.result.reason === "payment") {
+        assert.equal(text, `The shopper still has to finish this payment step.\n${entry.result.url}`);
+      }
+      if (entry.hidden) {
+        assert.equal(text, WITHHELD);
+        assert.equal(text.includes(entry.hidden), false);
+      }
+    }
+    payload = JSON.stringify({ url: "https://evil.example" });
+    const tool = await callTool("place_order", confirm, {
+      sessionFile,
+      origin: `http://127.0.0.1:${port}`,
+      confirmPlace: accept,
+    });
+    assert.equal(tool.isError, true);
+    assert.equal(tool.text, WITHHELD);
+    assert.equal(tool.text.includes("evil.example"), false);
+    assert.equal(seen.some((call) => call.includes("evil.example") || call.includes("secret")), false);
   } finally {
     server.close();
     await rm(dir, { recursive: true, force: true });

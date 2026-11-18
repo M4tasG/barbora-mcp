@@ -49,7 +49,7 @@ node --experimental-strip-types src/cli.ts cart remove --id 000000000001335200
 
 `checkout slots` lists the open hours. `checkout slot` reserves the hour the shopper names. Reserving a slot does not place an order. Delivery can change the total, so read `checkout` again after a reservation.
 
-`checkout place` places the order when `--line`, `--total`, `--address`, and `--slot` match that checkout. Repeat `--line` for each cart line, as `<id>:<quantity>`. A local prompt asks the shopper to accept. A bank or card step is printed for the shopper to finish.
+`checkout place` places the order when `--line`, `--total`, `--address`, and `--slot` match that checkout. Repeat `--line` for each cart line, as `<id>:<quantity>`. A local prompt asks the shopper to accept. A payment step is printed when its address is the shop. Finish any other payment on the shop site.
 
 ```bash
 node --experimental-strip-types src/cli.ts checkout
@@ -60,7 +60,7 @@ node --experimental-strip-types src/cli.ts checkout place --total 9.99 --address
 
 ## MCP
 
-An agent on this machine can call the same sign-in, search, cart, slot, checkout preview, and place-order actions. Password sign-in opens a local prompt. The password is not a tool argument and is not stored. Placing an order needs a confirm of the latest cart lines, total, address, and slot, then a local prompt the shopper accepts. A bank or card step is returned to the shopper.
+An agent on this machine can call the same sign-in, search, cart, slot, checkout preview, and place-order actions. Password sign-in opens a local prompt. The password is not a tool argument and is not stored. Placing an order needs a confirm of the latest cart lines, total, address, and slot, then a local prompt the shopper accepts. A payment step is returned when its address is the shop.
 
 ```json
 {
@@ -80,4 +80,4 @@ npm test
 
 ## Status
 
-Password sign-in, browser sign-in, catalog search, the cart, the local MCP server, slot reservation, checkout preview, and placing an order after a matching confirm work. A bank or card step is handed back to the shopper. The shopping skill is `.agents/skills/barbora/SKILL.md`.
+Password sign-in, browser sign-in, catalog search, the cart, the local MCP server, slot reservation, checkout preview, and placing an order after a matching confirm work. A payment step whose address is the shop is handed back to the shopper. The shopping skill is `.agents/skills/barbora/SKILL.md`.

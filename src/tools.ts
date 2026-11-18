@@ -38,7 +38,7 @@ export const toolDescriptions = {
   reserve_slot: "Reserve one slot for the shopper. Pass the day id and the hour id from list_slots. This does not place an order.",
   checkout_preview: "Show the cart lines, address, slot, and the shop total. This does not place an order.",
   place_order:
-    "Place the order when the confirm matches the latest checkout lines, total, address, and slot. A local prompt asks the shopper to accept. A bank or card step is returned to the shopper.",
+    "Place the order when the confirm matches the latest checkout lines, total, address, and slot. A local prompt asks the shopper to accept. A payment step is returned only when its address is the shop or this machine.",
 } as const;
 
 export type ToolName = keyof typeof toolDescriptions;
@@ -166,7 +166,9 @@ async function place(args: Record<string, unknown>, context: ToolContext): Promi
     accept: context.confirmPlace ?? promptToPlace,
   });
   const text = formatPlace(result);
-  return result.ok ? ok(text) : fail(text);
+  if (result.ok) return ok(text);
+  if (result.reason === "payment") return ok(text);
+  return fail(text);
 }
 
 async function checkoutPreview(context: ToolContext): Promise<ToolResult> {

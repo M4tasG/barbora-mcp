@@ -339,7 +339,9 @@ async function placeCommand(): Promise<number> {
     accept: promptToPlace,
   });
   stdout.write(`${formatPlace(result)}\n`);
-  return result.ok ? 0 : 1;
+  if (result.ok) return 0;
+  if (result.reason === "payment") return 0;
+  return 1;
 }
 
 const command = process.argv[2];
